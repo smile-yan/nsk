@@ -1,0 +1,30 @@
+[package]
+name = "nsk-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "NSK nsk-runtime"
+
+[dependencies]
+nsk-core = { workspace = true }
+nsk-policy = { workspace = true }
+nsk-provider = { workspace = true }
+nsk-resource = { workspace = true }
+nsk-supervisor = { workspace = true }
+nsk-workspace = { workspace = true }
+nsk-provider-linux = { workspace = true }
+nsk-provider-macos = { workspace = true }
+nsk-provider-windows = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+
+[lints]
+workspace = true
+[dev-dependencies]
+tempfile = { workspace = true }

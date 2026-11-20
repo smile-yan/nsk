@@ -1,0 +1,25 @@
+[package]
+name = "nsk-provider-macos"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "NSK nsk-provider-macos"
+
+[dependencies]
+nsk-core = { workspace = true }
+nsk-policy = { workspace = true }
+nsk-provider = { workspace = true }
+nsk-workspace = { workspace = true }
+
+async-trait = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true
+

@@ -1,0 +1,5 @@
+# NSK pins the stable toolchain. Edition 2024 requires >= 1.85.
+[toolchain]
+channel = "stable"
+profile = "default"
+components = ["rustfmt", "clippy"]

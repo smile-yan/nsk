@@ -1,0 +1,21 @@
+[package]
+name = "nsk-supervisor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "NSK nsk-supervisor"
+
+[dependencies]
+nsk-core = { workspace = true }
+nsk-resource = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+libc = { workspace = true }
+
+[lints]
+workspace = true
+

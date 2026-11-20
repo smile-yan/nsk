@@ -1,0 +1,34 @@
+[package]
+name = "nsk-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "NSK nsk-cli"
+
+[dependencies]
+nsk-core = { workspace = true }
+nsk-policy = { workspace = true }
+nsk-provider = { workspace = true }
+nsk-provider-linux = { workspace = true }
+nsk-provider-macos = { workspace = true }
+nsk-provider-windows = { workspace = true }
+nsk-runtime = { workspace = true }
+nsk-scheduler = { workspace = true }
+nsk-workspace = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[lints]
+workspace = true
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[[bin]]
+name = "nsk"
+path = "src/main.rs"

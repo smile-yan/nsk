@@ -1,0 +1,32 @@
+[package]
+name = "nsk-provider-linux"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "NSK nsk-provider-linux"
+
+[dependencies]
+nsk-core = { workspace = true }
+nsk-policy = { workspace = true }
+nsk-provider = { workspace = true }
+nsk-supervisor = { workspace = true }
+nsk-resource = { workspace = true }
+nsk-workspace = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+libc = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+nsk-runtime = { workspace = true }
+nsk-provider = { workspace = true }
+
+[lints]
+workspace = true
+

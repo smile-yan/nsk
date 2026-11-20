@@ -1,0 +1,81 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "crates/nsk-core",
+    "crates/nsk-policy",
+    "crates/nsk-runtime",
+    "crates/nsk-supervisor",
+    "crates/nsk-resource",
+    "crates/nsk-workspace",
+    "crates/nsk-provider",
+    "crates/nsk-provider-linux",
+    "crates/nsk-provider-macos",
+    "crates/nsk-provider-windows",
+    "crates/nsk-scheduler",
+    "crates/nsk-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.85"
+repository = "https://example.invalid/nsk"
+authors = ["NSK contributors"]
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+# Kernel code must never panic on the hot path; tests are exempted via allow attrs where needed.
+unwrap_used = "warn"
+expect_used = "warn"
+
+[workspace.dependencies]
+# Internal crates
+nsk-core = { path = "crates/nsk-core" }
+nsk-policy = { path = "crates/nsk-policy" }
+nsk-runtime = { path = "crates/nsk-runtime" }
+nsk-supervisor = { path = "crates/nsk-supervisor" }
+nsk-resource = { path = "crates/nsk-resource" }
+nsk-workspace = { path = "crates/nsk-workspace" }
+nsk-provider = { path = "crates/nsk-provider" }
+nsk-provider-linux = { path = "crates/nsk-provider-linux" }
+nsk-provider-macos = { path = "crates/nsk-provider-macos" }
+nsk-provider-windows = { path = "crates/nsk-provider-windows" }
+nsk-scheduler = { path = "crates/nsk-scheduler" }
+
+# External dependencies
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+async-trait = "0.1"
+libc = "0.2"
+
+tokio = { version = "1", features = [
+    "rt",
+    "rt-multi-thread",
+    "sync",
+    "process",
+    "time",
+    "macros",
+    "io-util",
+    "signal",
+    "fs",
+] }
+
+tokio-util = { version = "0.7", features = ["rt"] }
+
+# Dev / CLI
+clap = { version = "4", features = ["derive"] }
+tempfile = "3"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
