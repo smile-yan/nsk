@@ -13,6 +13,8 @@ use nsk_core::error::SandboxError;
 use nsk_core::result::ExitInfo;
 use nsk_resource::limits::RlimitSpec;
 use tracing::debug;
+#[cfg(not(unix))]
+use tracing::warn;
 
 use crate::monitor::{ExecOutcome, OutcomeReason};
 use crate::output::OutputShared;
@@ -33,6 +35,9 @@ pub struct ProcessSpec {
     /// Files opened pre-exec and duplicated onto fixed fds (launcher aux
     /// fds such as bwrap's `--seccomp-fd`).
     pub pre_open_files: Vec<(PathBuf, i32)>,
+    /// Extra `CreateProcess` flags (Windows only; e.g. `CREATE_SUSPENDED`
+    /// so a provider can assign the child to a Job Object before resume).
+    pub creation_flags: u32,
 }
 
 impl ProcessSpec {
@@ -46,6 +51,7 @@ impl ProcessSpec {
             process_group: true,
             rlimits: Vec::new(),
             pre_open_files: Vec::new(),
+            creation_flags: 0,
         }
     }
 
@@ -238,7 +244,21 @@ pub(crate) fn build_command(spec: &ProcessSpec) -> Result<tokio::process::Comman
             apply_pre_open(&mut cmd, path.clone(), *fd)?;
         }
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        if spec.creation_flags != 0 {
+            cmd.creation_flags(spec.creation_flags);
+        }
+        if !spec.rlimits.is_empty() {
+            warn!(
+                "rlimits requested but this platform has no pre-exec rlimit support; limits ignored"
+            );
+        }
+        if !spec.process_group {
+            debug!("process_group flag ignored on this platform");
+        }
+    }
+    #[cfg(all(not(unix), not(windows)))]
     {
         if !spec.rlimits.is_empty() {
             warn!(

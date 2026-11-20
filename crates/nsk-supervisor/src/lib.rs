@@ -24,6 +24,11 @@ pub mod stdin;
 pub mod terminate;
 pub mod timer;
 
+/// Reactive enforcement watchdogs (§7.2 monitor + §7.4 evidence) for
+/// platforms without preventive per-tree mechanisms (macOS PoC).
+#[cfg(target_os = "macos")]
+pub mod watchdog;
+
 pub use monitor::{OutcomeReason, SupervisorConfig, SupervisorEvent};
 pub use output::{LimitCrossing, OutputBuffer, OutputSnapshot, OutputStream};
 pub use process::{ProcessSpec, SupervisedProcess};

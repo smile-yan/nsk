@@ -211,6 +211,24 @@ fn unavailable(code: &str, what: &str, status: CapabilityStatus) -> SandboxError
     }
 }
 
+/// Describe the network-isolation mechanism from the capability snapshot.
+fn network_enforced_by(caps: &PlatformCapabilities) -> String {
+    if caps.isolation.network_namespace.is_available() {
+        "network namespace (no interfaces)".to_string()
+    } else {
+        "platform network-isolation mechanism (all socket operations denied)".to_string()
+    }
+}
+
+/// Describe the loopback-only mechanism from the capability snapshot.
+fn loopback_enforced_by(caps: &PlatformCapabilities) -> String {
+    if caps.isolation.network_namespace.is_available() {
+        "network namespace (loopback only)".to_string()
+    } else {
+        "platform network-isolation mechanism (loopback only)".to_string()
+    }
+}
+
 /// Capability matching (§6.3 capability rules, §2.4 fail-closed).
 fn match_policy(
     policy: &SandboxPolicy,
@@ -252,16 +270,19 @@ fn match_policy(
         iso.pid_namespace,
         limitations,
     )?;
+    // Filesystem/network isolation is matched against the domain-level
+    // mechanism fields: providers can satisfy these domains with mechanisms
+    // other than namespaces (Seatbelt on macOS, AppContainer on Windows).
     let filesystem = check_domain(
         req_iso.isolate_filesystem,
         "filesystem",
-        iso.mount_namespace,
+        iso.filesystem_isolation,
         limitations,
     )?;
     let network = check_domain(
         req_iso.isolate_network,
         "network",
-        iso.network_namespace,
+        iso.network_isolation,
         limitations,
     )?;
     let ipc = check_domain(req_iso.isolate_ipc, "ipc", iso.ipc_namespace, limitations)?;
@@ -306,7 +327,7 @@ fn match_policy(
             if network.is_available() {
                 AppliedNetwork {
                     policy: NetworkPolicy::Disabled,
-                    enforced_by: "network namespace (no interfaces)".into(),
+                    enforced_by: network_enforced_by(caps),
                 }
             } else {
                 // Unreachable in practice: check_domain already failed when
@@ -319,7 +340,7 @@ fn match_policy(
         }
         NetworkPolicy::LoopbackOnly => AppliedNetwork {
             policy: NetworkPolicy::LoopbackOnly,
-            enforced_by: "network namespace (loopback only)".into(),
+            enforced_by: loopback_enforced_by(caps),
         },
         NetworkPolicy::Restricted | NetworkPolicy::AllowAll => {
             // Rejected by validation; defensive record only.
@@ -346,17 +367,27 @@ fn match_policy(
     let resources = match_limits(&policy.resources, res, limitations)?;
 
     // --- process -----------------------------------------------------------
+    // Process-limit mechanism ladder (§6.4): preventive per-sandbox limits
+    // rank before degraded per-user rlimits, reactive watchdogs last.
     let enforced_by = if res.cgroup_v2.is_available() && res.controllers.pids.is_available() {
         "cgroup pids.max".to_string()
-    } else if res.rlimits.is_available() {
-        "rlimit NPROC (per-user semantics on Linux; degraded)".to_string()
+    } else if res.job_objects.is_available() {
+        "Job Object active process limit (Windows)".to_string()
+    } else if res.rlimit_processes.is_available() {
+        "rlimit NPROC (per-user semantics; degraded)".to_string()
+    } else if res.process_watchdog.is_available() {
+        limitations.push(Diagnostic::warning(
+            codes::RESOURCE_LIMIT_DEGRADED,
+            "max_processes degraded to process-group watchdog (reactive; overshoot possible)",
+        ));
+        "process watchdog (group-size polling + kill; reactive)".to_string()
     } else {
         limitations.push(Diagnostic::error(
             codes::RESOURCE_LIMIT_UNAVAILABLE,
             "no mechanism to enforce max_processes",
         ));
         return Err(SandboxError::ResourceLimit(
-            "max_processes cannot be enforced: no cgroup pids controller and no rlimit support"
+            "max_processes cannot be enforced: no per-sandbox mechanism, no usable rlimit NPROC and no watchdog"
                 .into(),
         ));
     };
@@ -459,6 +490,11 @@ fn match_seccomp(
 }
 
 /// Match resource limits to mechanisms and record per-limit application.
+///
+/// Each limit is resolved through a mechanism ladder (§6.4). Preventive
+/// per-sandbox mechanisms rank before degraded per-process mechanisms, and
+/// reactive watchdogs last: the ladder order encodes enforcement quality, and
+/// the applied record names the exact rung actually used.
 fn match_limits(
     limits: &ResourceLimits,
     res: &ResourceCapabilities,
@@ -477,9 +513,12 @@ fn match_limits(
     });
 
     let cgroup_ok = res.cgroup_v2.is_available();
+    let cgroup_memory = cgroup_ok && res.controllers.memory.is_available();
+    let job_memory = res.job_objects.is_available();
 
-    // Memory: cgroup memory.max, else rlimit AS (degraded), else fail.
-    out.push(if cgroup_ok && res.controllers.memory.is_available() {
+    // Memory: cgroup memory.max → Job Object memory limit → rlimit AS
+    // (degraded) → watchdog (reactive) → fail.
+    out.push(if cgroup_memory {
         AppliedLimit {
             kind: LimitKind::Memory,
             requested: format_bytes(limits.memory_bytes),
@@ -488,7 +527,16 @@ fn match_limits(
             mechanism: Some("cgroup v2 memory.max".into()),
             detail: None,
         }
-    } else if res.rlimits.is_available() {
+    } else if job_memory {
+        AppliedLimit {
+            kind: LimitKind::Memory,
+            requested: format_bytes(limits.memory_bytes),
+            effective: Some(format_bytes(limits.memory_bytes)),
+            status: CapabilityStatus::Available,
+            mechanism: Some("Job Object process/job memory limit (Windows)".into()),
+            detail: Some("commit-charge based; allocation beyond the limit fails in the child".into()),
+        }
+    } else if res.rlimit_address_space.is_available() {
         limitations.push(Diagnostic::warning(
             codes::RESOURCE_LIMIT_DEGRADED,
             "memory limit degraded to rlimit AS (virtual memory; coarse)",
@@ -501,10 +549,26 @@ fn match_limits(
             mechanism: Some("rlimit AS (address space; degraded vs cgroup)".into()),
             detail: Some("virtual-memory based; shared mappings may distort semantics".into()),
         }
+    } else if res.memory_watchdog.is_available() {
+        limitations.push(Diagnostic::warning(
+            codes::RESOURCE_LIMIT_DEGRADED,
+            "memory limit degraded to monitor-and-kill watchdog (reactive; enforcement window ~100-300ms)",
+        ));
+        AppliedLimit {
+            kind: LimitKind::Memory,
+            requested: format_bytes(limits.memory_bytes),
+            effective: Some(format_bytes(limits.memory_bytes)),
+            status: CapabilityStatus::Available,
+            mechanism: Some("memory watchdog (RSS polling + kill; reactive)".into()),
+            detail: Some(
+                "no preventive mechanism on this platform; usage is polled and the tree is killed on exceed (overshoot possible)"
+                    .into(),
+            ),
+        }
     } else {
         limitations.push(Diagnostic::error(
             codes::RESOURCE_LIMIT_UNAVAILABLE,
-            "memory limit cannot be enforced: no cgroup memory controller, no rlimits",
+            "memory limit cannot be enforced: no preventive mechanism and no watchdog",
         ));
         return Err(SandboxError::ResourceLimit(
             "memory_bytes cannot be enforced on this platform".into(),
@@ -518,17 +582,17 @@ fn match_limits(
             .swap_bytes
             .map(format_bytes)
             .unwrap_or_else(|| "0 (no swap)".into()),
-        effective: if cgroup_ok && res.controllers.memory.is_available() {
+        effective: if cgroup_memory {
             Some(format_bytes(limits.swap_bytes.unwrap_or(0)))
         } else {
             None
         },
-        status: if cgroup_ok && res.controllers.memory.is_available() {
+        status: if cgroup_memory {
             CapabilityStatus::Available
         } else {
             CapabilityStatus::Unsupported
         },
-        mechanism: if cgroup_ok && res.controllers.memory.is_available() {
+        mechanism: if cgroup_memory {
             Some("cgroup v2 memory.swap.max".into())
         } else {
             None
@@ -536,7 +600,8 @@ fn match_limits(
         detail: None,
     });
 
-    // CPU quota — cgroup only; degrade (record, don't fail).
+    // CPU quota — cgroup cpu.max → Job Object CPU rate control → degrade
+    // (record, don't fail).
     out.push(if cgroup_ok && res.controllers.cpu.is_available() {
         AppliedLimit {
             kind: LimitKind::CpuQuota,
@@ -551,11 +616,34 @@ fn match_limits(
             mechanism: Some("cgroup v2 cpu.max".into()),
             detail: None,
         }
+    } else if job_memory {
+        let effective = limits
+            .cpu_quota
+            .map(|q| format!("{:.2} cores", q.cores));
+        AppliedLimit {
+            kind: LimitKind::CpuQuota,
+            requested: limits
+                .cpu_quota
+                .map(|q| format!("{:.2} cores", q.cores))
+                .unwrap_or_else(|| "unlimited".into()),
+            status: if limits.cpu_quota.is_some() {
+                CapabilityStatus::Available
+            } else {
+                CapabilityStatus::NotConfigured
+            },
+            mechanism: if limits.cpu_quota.is_some() {
+                Some("Job Object CPU rate control (Windows; hard limit)".into())
+            } else {
+                None
+            },
+            effective,
+            detail: Some("1% granularity (CpuRate is percent × 100)".into()),
+        }
     } else {
         if limits.cpu_quota.is_some() {
             limitations.push(Diagnostic::warning(
                 codes::RESOURCE_LIMIT_DEGRADED,
-                "cpu_quota unsupported without cgroup cpu controller; running unlimited (wall/cpu-time limits still enforced)",
+                "cpu_quota unsupported without a CPU rate mechanism; running unlimited (wall/cpu-time limits still enforced)",
             ));
         }
         AppliedLimit {
@@ -567,7 +655,7 @@ fn match_limits(
             effective: None,
             status: CapabilityStatus::Unsupported,
             mechanism: None,
-            detail: Some("requires cgroups v2 cpu controller".into()),
+            detail: Some("requires cgroups v2 cpu controller or Job Object CPU rate control".into()),
         }
     });
 
@@ -688,6 +776,8 @@ mod tests {
                 network_namespace: a,
                 ipc_namespace: a,
                 uts_namespace: a,
+                filesystem_isolation: a,
+                network_isolation: a,
                 launcher: ToolInfo {
                     name: "bwrap".into(),
                     path: Some("/usr/bin/bwrap".into()),
@@ -703,6 +793,11 @@ mod tests {
                     pids: a,
                 },
                 rlimits: a,
+                rlimit_address_space: a,
+                rlimit_processes: a,
+                job_objects: CapabilityStatus::Unsupported,
+                memory_watchdog: CapabilityStatus::Unsupported,
+                process_watchdog: CapabilityStatus::Unsupported,
                 process_tree_kill: a,
                 disk_quota: CapabilityStatus::Unsupported,
             },
@@ -854,5 +949,153 @@ mod tests {
             .expect("disk limit");
         assert_eq!(disk.status, CapabilityStatus::Unsupported);
         assert!(disk.detail.as_deref().unwrap().contains("advisory"));
+    }
+
+    /// Windows-style capability snapshot: Job Objects, no namespaces, no
+    /// rlimits, no cgroups.
+    fn windows_caps() -> PlatformCapabilities {
+        let mut caps = full_caps();
+        caps.platform = nsk_core::capability::Platform::Windows;
+        caps.isolation = IsolationCapabilities::unsupported();
+        caps.resources.cgroup_v2 = CapabilityStatus::Unsupported;
+        caps.resources.controllers = CgroupControllers::unsupported();
+        caps.resources.rlimits = CapabilityStatus::Unsupported;
+        caps.resources.rlimit_address_space = CapabilityStatus::Unsupported;
+        caps.resources.rlimit_processes = CapabilityStatus::Unsupported;
+        caps.resources.job_objects = CapabilityStatus::Available;
+        caps.resources.process_tree_kill = CapabilityStatus::Available;
+        caps.security = SecurityCapabilities::unsupported();
+        caps.security.privilege_dropping = CapabilityStatus::NotConfigured;
+        caps
+    }
+
+    /// macOS-style capability snapshot: Seatbelt filesystem/network
+    /// isolation, usable rlimits, reactive watchdogs, no namespaces/cgroups.
+    fn macos_caps() -> PlatformCapabilities {
+        let mut caps = full_caps();
+        caps.platform = nsk_core::capability::Platform::MacOS;
+        caps.isolation = IsolationCapabilities::unsupported();
+        caps.isolation.filesystem_isolation = CapabilityStatus::Available;
+        caps.isolation.network_isolation = CapabilityStatus::Available;
+        caps.resources.cgroup_v2 = CapabilityStatus::Unsupported;
+        caps.resources.controllers = CgroupControllers::unsupported();
+        caps.resources.rlimit_address_space = CapabilityStatus::Unsupported;
+        caps.resources.rlimit_processes = CapabilityStatus::Unsupported;
+        caps.resources.job_objects = CapabilityStatus::Unsupported;
+        caps.resources.memory_watchdog = CapabilityStatus::Available;
+        caps.resources.process_watchdog = CapabilityStatus::Available;
+        caps.resources.process_tree_kill = CapabilityStatus::Available;
+        caps.security.seccomp = CapabilityStatus::Unsupported;
+        caps.security.privilege_dropping = CapabilityStatus::Unsupported;
+        caps
+    }
+
+    /// A policy compatible with providers that lack namespace-style process/
+    /// ipc/uts isolation (Windows, macOS): filesystem+network isolation
+    /// requested, the other domains off.
+    fn domain_policy() -> SandboxPolicy {
+        let mut policy = SandboxPolicy::minimal();
+        policy.isolation = IsolationPolicy {
+            isolate_process: false,
+            isolate_filesystem: true,
+            isolate_network: true,
+            isolate_ipc: false,
+            isolate_uts: false,
+        };
+        policy
+    }
+
+    /// Domain-isolation-free policy with limits intact (Windows-compatible).
+    fn windows_policy() -> SandboxPolicy {
+        let mut policy = SandboxPolicy::minimal();
+        policy.isolation = IsolationPolicy {
+            isolate_process: false,
+            isolate_filesystem: false,
+            isolate_network: false,
+            isolate_ipc: false,
+            isolate_uts: false,
+        };
+        policy.filesystem.isolate_root = false;
+        policy.filesystem.deny_host_paths = false;
+        policy.security.no_new_privileges = false;
+        policy
+    }
+
+    #[test]
+    fn windows_job_objects_enforce_memory_and_processes() {
+        let eff = resolve(&spec(windows_policy()), &windows_caps()).expect("resolve");
+        let mem = eff
+            .applied
+            .resources
+            .iter()
+            .find(|l| l.kind == LimitKind::Memory)
+            .expect("memory limit");
+        assert_eq!(
+            mem.mechanism.as_deref(),
+            Some("Job Object process/job memory limit (Windows)")
+        );
+        assert_eq!(
+            eff.applied.process.enforced_by,
+            "Job Object active process limit (Windows)"
+        );
+        let quota = eff
+            .applied
+            .resources
+            .iter()
+            .find(|l| l.kind == LimitKind::CpuQuota)
+            .expect("quota limit");
+        assert_eq!(quota.status, CapabilityStatus::Available);
+        assert!(quota.mechanism.as_deref().unwrap().contains("Job Object"));
+    }
+
+    #[test]
+    fn windows_still_fails_closed_on_fs_network_isolation() {
+        // Job Objects provide no filesystem/network isolation (§11.3).
+        let err = resolve(&spec(domain_policy()), &windows_caps()).expect_err("must refuse");
+        assert!(matches!(err, SandboxError::CapabilityInsufficient { .. }));
+    }
+
+    #[test]
+    fn macos_watchdog_ladder_is_used() {
+        let eff = resolve(&spec(domain_policy()), &macos_caps()).expect("resolve");
+        let mem = eff
+            .applied
+            .resources
+            .iter()
+            .find(|l| l.kind == LimitKind::Memory)
+            .expect("memory limit");
+        assert_eq!(
+            mem.mechanism.as_deref(),
+            Some("memory watchdog (RSS polling + kill; reactive)")
+        );
+        assert!(eff.applied.process.enforced_by.contains("process watchdog"));
+        // Filesystem and network domains resolve via the domain-level fields.
+        assert_eq!(
+            eff.applied.isolation.filesystem,
+            CapabilityStatus::Available
+        );
+        assert_eq!(eff.applied.isolation.network, CapabilityStatus::Available);
+        // Degrade warnings are recorded.
+        assert!(
+            eff.limitations
+                .iter()
+                .any(|d| d.code == codes::RESOURCE_LIMIT_DEGRADED)
+        );
+    }
+
+    #[test]
+    fn macos_still_fails_closed_on_process_ipc_uts_domains() {
+        // Seatbelt provides no process/ipc/uts isolation.
+        let err = resolve(&spec(SandboxPolicy::minimal()), &macos_caps()).expect_err("must refuse");
+        assert!(matches!(err, SandboxError::CapabilityInsufficient { .. }));
+    }
+
+    #[test]
+    fn no_mechanism_at_all_fails_closed() {
+        let mut caps = macos_caps();
+        caps.resources.memory_watchdog = CapabilityStatus::Unsupported;
+        caps.resources.process_watchdog = CapabilityStatus::Unsupported;
+        let err = resolve(&spec(domain_policy()), &caps).expect_err("must refuse");
+        assert!(matches!(err, SandboxError::ResourceLimit(_)));
     }
 }

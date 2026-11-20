@@ -10,6 +10,7 @@
 
 use std::time::Duration;
 
+#[cfg(unix)]
 use tokio::time::sleep;
 
 /// Why termination started (observable via the event tap).

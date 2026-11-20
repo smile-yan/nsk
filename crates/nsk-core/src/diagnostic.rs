@@ -73,6 +73,7 @@ pub mod codes {
     pub const CAPABILITY_DEGRADED: &str = "NSK1101";
     pub const CAPABILITY_UNVERIFIED: &str = "NSK1102";
     pub const TOOL_MISSING: &str = "NSK1103";
+    pub const CAPABILITY_VERIFIED: &str = "NSK1104";
 
     // 2xxx — policy
     pub const POLICY_INVALID: &str = "NSK2000";

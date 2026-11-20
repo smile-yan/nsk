@@ -15,6 +15,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tracing::warn;
 
+#[cfg(target_os = "macos")]
+use std::sync::Arc as StdArc;
+
 use nsk_core::capability::{
     CapabilityStatus, IsolationCapabilities, Platform, PlatformCapabilities, ResourceCapabilities,
     SecurityCapabilities, ToolInfo,
@@ -41,15 +44,73 @@ impl MockProvider {
     }
 }
 
-/// Resources held by a mock sandbox (none — the supervisor owns everything).
+/// Resources held by a mock sandbox (watchdog evidence on macOS; the
+/// supervisor owns everything else).
 #[derive(Debug)]
 pub struct MockResources {
     pub id: SandboxId,
+    #[cfg(target_os = "macos")]
+    pub evidence: StdArc<nsk_supervisor::watchdog::WatchdogEvidence>,
 }
 
 impl ProviderResources for MockResources {
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+
+    fn observe_usage(&self) -> Result<ResourceUsage, SandboxError> {
+        #[cfg(target_os = "macos")]
+        let usage = {
+            let (oom, pids, peak) = self.evidence.snapshot();
+            Ok(ResourceUsage {
+                oom_events: oom,
+                pids_limit_hits: pids,
+                memory_peak_bytes: peak,
+                ..Default::default()
+            })
+        };
+        #[cfg(not(target_os = "macos"))]
+        let usage = Ok(ResourceUsage::default());
+        usage
+    }
+}
+
+/// Arm the supervisor watchdogs when the applied policy selected them as
+/// the enforcing mechanism (macOS: no preventive rung exists).
+#[cfg(target_os = "macos")]
+fn arm_watchdogs(
+    policy: &nsk_policy::EffectivePolicy,
+    process: &nsk_supervisor::process::SupervisedProcess,
+    evidence: StdArc<nsk_supervisor::watchdog::WatchdogEvidence>,
+) {
+    use nsk_supervisor::watchdog::{WatchdogConfig, WatchdogLimits, spawn_watchdog};
+    let r = &policy.requested.resources;
+    let memory = policy
+        .applied
+        .resources
+        .iter()
+        .any(|l| {
+            l.kind == nsk_policy::effective::LimitKind::Memory
+                && l.status.is_available()
+                && l.mechanism
+                    .as_deref()
+                    .is_some_and(|m| m.contains("watchdog"))
+        })
+        .then_some(r.memory_bytes);
+    let processes = (policy.applied.process.enforced_by.contains("watchdog"))
+        .then_some(policy.requested.process.max_processes.max(1));
+    let limits = WatchdogLimits {
+        memory_bytes: memory,
+        max_processes: processes,
+    };
+    if limits.is_armed() {
+        spawn_watchdog(
+            process.pid(),
+            process.clone(),
+            limits,
+            evidence,
+            WatchdogConfig::default(),
+        );
     }
 }
 
@@ -69,6 +130,8 @@ impl SandboxProvider for MockProvider {
                 network_namespace: CapabilityStatus::Unsupported,
                 ipc_namespace: CapabilityStatus::Unsupported,
                 uts_namespace: CapabilityStatus::Unsupported,
+                filesystem_isolation: CapabilityStatus::Unsupported,
+                network_isolation: CapabilityStatus::Unsupported,
                 launcher: ToolInfo {
                     name: "none (mock provider)".into(),
                     status: CapabilityStatus::Unsupported,
@@ -79,6 +142,31 @@ impl SandboxProvider for MockProvider {
                 cgroup_v2: CapabilityStatus::Unsupported,
                 controllers: nsk_core::capability::CgroupControllers::unsupported(),
                 rlimits: CapabilityStatus::Available,
+                // RLIMIT_AS is unusable on macOS (setrlimit EINVAL, not
+                // enforced by XNU); RLIMIT_NPROC is per-user there.
+                rlimit_address_space: if cfg!(target_os = "macos") {
+                    CapabilityStatus::Unsupported
+                } else {
+                    CapabilityStatus::Available
+                },
+                rlimit_processes: if cfg!(target_os = "macos") {
+                    CapabilityStatus::Unsupported
+                } else {
+                    CapabilityStatus::Available
+                },
+                job_objects: CapabilityStatus::Unsupported,
+                // On macOS the mock enforces memory/process limits through
+                // the supervisor watchdogs (no rlimit mechanism exists).
+                memory_watchdog: if cfg!(target_os = "macos") {
+                    CapabilityStatus::Available
+                } else {
+                    CapabilityStatus::Unsupported
+                },
+                process_watchdog: if cfg!(target_os = "macos") {
+                    CapabilityStatus::Available
+                } else {
+                    CapabilityStatus::Unsupported
+                },
                 process_tree_kill: CapabilityStatus::Available,
                 disk_quota: CapabilityStatus::Unsupported,
             },
@@ -134,7 +222,11 @@ impl SandboxProvider for MockProvider {
             id: ctx.id,
             provider_name: self.name(),
             plan,
-            resources: Some(Arc::new(MockResources { id: ctx.id })),
+            resources: Some(Arc::new(MockResources {
+                id: ctx.id,
+                #[cfg(target_os = "macos")]
+                evidence: StdArc::new(nsk_supervisor::watchdog::WatchdogEvidence::default()),
+            })),
         })
     }
 
@@ -147,6 +239,12 @@ impl SandboxProvider for MockProvider {
             prepared.plan.clone().into_process_spec(),
             crate::traits::supervisor_config(&ctx.policy, ctx.events),
         )?;
+        #[cfg(target_os = "macos")]
+        if let Some(res) = &prepared.resources {
+            if let Some(mock_res) = res.as_ref().as_any().downcast_ref::<MockResources>() {
+                arm_watchdogs(&ctx.policy, &process, mock_res.evidence.clone());
+            }
+        }
         Ok(RunningSandbox {
             id: prepared.id,
             provider_name: prepared.provider_name,
@@ -185,12 +283,16 @@ impl SandboxProvider for MockProvider {
 /// rlimits the mock can honestly enforce via the supervisor.
 fn mock_rlimits(policy: &nsk_core::policy::SandboxPolicy) -> Vec<RlimitSpec> {
     let r = &policy.resources;
-    vec![
+    let mut specs = vec![
         RlimitSpec::OpenFiles(r.max_open_files),
         RlimitSpec::FileSize(r.max_file_size_bytes),
-        #[cfg(not(target_os = "macos"))]
-        RlimitSpec::AddressSpace(r.memory_bytes),
-    ]
+    ];
+    // RLIMIT_AS/NPROC are unusable on macOS (see capability report).
+    if !cfg!(target_os = "macos") {
+        specs.push(RlimitSpec::AddressSpace(r.memory_bytes));
+        specs.push(RlimitSpec::Processes(u64::from(r.max_processes)));
+    }
+    specs
 }
 
 #[cfg(test)]

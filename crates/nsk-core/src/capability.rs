@@ -80,6 +80,13 @@ pub struct ToolInfo {
 }
 
 /// Isolation mechanism capabilities (§9.3).
+///
+/// Namespace fields describe the *specific* namespace mechanisms (honest
+/// per-mechanism detail); the domain fields describe whether the platform can
+/// isolate the *domain* at all, by any mechanism (mount namespaces on Linux,
+/// Seatbelt profiles on macOS, AppContainer on Windows). The Policy Engine
+/// matches isolation requests against the domain fields (§6.3): a policy asks
+/// "can the filesystem be isolated?", not "is there a mount namespace?".
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IsolationCapabilities {
     pub user_namespace: CapabilityStatus,
@@ -88,18 +95,54 @@ pub struct IsolationCapabilities {
     pub network_namespace: CapabilityStatus,
     pub ipc_namespace: CapabilityStatus,
     pub uts_namespace: CapabilityStatus,
+    /// Filesystem isolation via any mechanism (mount namespace, Seatbelt,
+    /// AppContainer ACLs).
+    #[serde(default)]
+    pub filesystem_isolation: CapabilityStatus,
+    /// Network isolation via any mechanism (network namespace, Seatbelt
+    /// network denies, AppContainer).
+    #[serde(default)]
+    pub network_isolation: CapabilityStatus,
     /// External isolation launcher used by the provider.
     pub launcher: ToolInfo,
 }
 
 /// Resource-control capabilities (§9.3).
+///
+/// The Policy Engine resolves each requested limit through a mechanism ladder
+/// (§6.4): preventive per-sandbox mechanisms (cgroups, Job Objects) are
+/// preferred over degraded per-process mechanisms (rlimit AS/NPROC) and
+/// reactive watchdogs. Each rung has its own capability so the applied policy
+/// never claims a mechanism the provider will not actually apply.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResourceCapabilities {
     /// cgroups v2 unified hierarchy usable by the current user.
     pub cgroup_v2: CapabilityStatus,
     pub controllers: CgroupControllers,
-    /// rlimit-based enforcement (RLIMIT_*).
+    /// rlimit-based enforcement for the reliable rlimits
+    /// (RLIMIT_NOFILE / FSIZE / CPU).
     pub rlimits: CapabilityStatus,
+    /// RLIMIT_AS usable to enforce memory limits (Linux: yes; macOS returns
+    /// EINVAL and does not enforce it; Windows: no rlimits at all).
+    #[serde(default)]
+    pub rlimit_address_space: CapabilityStatus,
+    /// RLIMIT_NPROC usable to enforce per-sandbox process limits (Linux:
+    /// degraded per-user semantics; macOS: per-user count includes unrelated
+    /// processes and is unusable; Windows: no rlimits).
+    #[serde(default)]
+    pub rlimit_processes: CapabilityStatus,
+    /// Windows Job Objects: preventive per-process-tree memory, CPU-rate,
+    /// active-process limits and whole-tree termination.
+    #[serde(default)]
+    pub job_objects: CapabilityStatus,
+    /// Reactive memory enforcement: poll per-process usage and kill on
+    /// exceed (macOS PoC; has an overshoot window by design).
+    #[serde(default)]
+    pub memory_watchdog: CapabilityStatus,
+    /// Reactive process-count enforcement: poll the sandbox process group
+    /// size and kill on exceed (macOS PoC; has an overshoot window).
+    #[serde(default)]
+    pub process_watchdog: CapabilityStatus,
     /// Reliable whole-process-tree termination.
     pub process_tree_kill: CapabilityStatus,
     /// Hard disk quota for the workspace (not just scanning).
@@ -160,6 +203,8 @@ impl IsolationCapabilities {
             network_namespace: s,
             ipc_namespace: s,
             uts_namespace: s,
+            filesystem_isolation: s,
+            network_isolation: s,
             launcher: ToolInfo {
                 name: "none".into(),
                 status: CapabilityStatus::Unsupported,
@@ -176,6 +221,11 @@ impl ResourceCapabilities {
             cgroup_v2: CapabilityStatus::Unsupported,
             controllers: CgroupControllers::unsupported(),
             rlimits: CapabilityStatus::Available,
+            rlimit_address_space: CapabilityStatus::Available,
+            rlimit_processes: CapabilityStatus::Available,
+            job_objects: CapabilityStatus::Unsupported,
+            memory_watchdog: CapabilityStatus::Unsupported,
+            process_watchdog: CapabilityStatus::Unsupported,
             process_tree_kill: CapabilityStatus::Unknown,
             disk_quota: CapabilityStatus::Unsupported,
         }

@@ -117,6 +117,77 @@ pub fn relax_isolation(spec: &mut SandboxSpec) {
     spec.policy.security.require_cgroup = false;
 }
 
+/// Drop exactly the isolation domains the probed provider cannot provide,
+/// returning what was dropped (surfaced as loud CLI warnings; the resolver
+/// additionally records every limitation in the result diagnostics).
+pub fn relax_unsupported_domains(
+    spec: &mut SandboxSpec,
+    caps: &nsk_core::capability::PlatformCapabilities,
+) -> Vec<String> {
+    use nsk_core::capability::CapabilityStatus;
+    let mut dropped = Vec::new();
+    let iso = &caps.isolation;
+
+    let mut relax = |available: bool, name: &str, spec: &mut SandboxSpec| {
+        if !available {
+            dropped.push(name.to_string());
+            match name {
+                "process" => spec.policy.isolation.isolate_process = false,
+                "filesystem" => {
+                    spec.policy.isolation.isolate_filesystem = false;
+                    spec.policy.filesystem.isolate_root = false;
+                    spec.policy.filesystem.deny_host_paths = false;
+                }
+                "network" => spec.policy.isolation.isolate_network = false,
+                "ipc" => spec.policy.isolation.isolate_ipc = false,
+                "uts" => spec.policy.isolation.isolate_uts = false,
+                "no_new_privileges" => spec.policy.security.no_new_privileges = false,
+                "user_namespace" => spec.policy.security.require_user_namespace = false,
+                _ => {}
+            }
+        }
+    };
+
+    relax(
+        iso.pid_namespace.is_available() || caps.resources.job_objects.is_available(),
+        "process",
+        spec,
+    );
+    relax(iso.filesystem_isolation.is_available(), "filesystem", spec);
+    relax(iso.network_isolation.is_available(), "network", spec);
+    relax(iso.ipc_namespace.is_available(), "ipc", spec);
+    relax(iso.uts_namespace.is_available(), "uts", spec);
+    relax(
+        caps.security.no_new_privileges.is_available(),
+        "no_new_privileges",
+        spec,
+    );
+    if spec.policy.security.require_user_namespace && !iso.user_namespace.is_available() {
+        spec.policy.security.require_user_namespace = false;
+        dropped.push("user_namespace".to_string());
+    }
+    if spec.policy.security.require_cgroup
+        && caps.resources.cgroup_v2 != CapabilityStatus::Available
+    {
+        spec.policy.security.require_cgroup = false;
+        dropped.push("require_cgroup".to_string());
+    }
+    // Host-path hiding and root remapping are namespace-only capabilities;
+    // providers with other filesystem mechanisms (Seatbelt) cannot honor
+    // them and refuse (fail-closed) — drop them explicitly here.
+    if !iso.mount_namespace.is_available() {
+        if spec.policy.filesystem.deny_host_paths {
+            spec.policy.filesystem.deny_host_paths = false;
+            dropped.push("deny_host_paths".to_string());
+        }
+        if spec.policy.filesystem.isolate_root {
+            spec.policy.filesystem.isolate_root = false;
+            dropped.push("isolate_root".to_string());
+        }
+    }
+    dropped
+}
+
 /// Run a program inside the sandbox; returns the CLI exit code.
 pub async fn run(
     runtime: Arc<dyn SandboxRuntime>,

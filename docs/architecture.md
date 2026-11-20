@@ -80,9 +80,9 @@ Running → Collecting → Cleaning → Completed
 | `nsk-resource` | 限额编码（cgroup/rlimit）、用量核算、超限判定（纯逻辑） |
 | `nsk-supervisor` | spawn、stdin/stdout/stderr 有界采集、wall-time、进程树终止、退出收集 |
 | `nsk-provider` | SandboxProvider Trait、类型化生命周期句柄、supervisor 配置翻译、Mock |
-| `nsk-provider-linux` | bubblewrap + namespaces + cgroups v2 + seccomp（第一阶段参考实现） |
-| `nsk-provider-macos` | fail-closed 占位（§12） |
-| `nsk-provider-windows` | fail-closed 占位（§11） |
+| `nsk-provider-linux` | bubblewrap + namespaces + cgroups v2 + seccomp（参考实现，§10） |
+| `nsk-provider-macos` | Seatbelt PoC：sandbox-exec 拒绝式 profile + 看门狗（§12） |
+| `nsk-provider-windows` | Job Objects MVP：无逃逸窗口作业分配 + 硬限 + 整树终止（§11） |
 | `nsk-runtime` | SandboxRuntime API、注册表、生命周期驱动、CleanupManager、事件流 |
 | `nsk-scheduler` | FIFO 队列、全局并发预算、任务取消 |
 | `nsk-cli` | doctor / capabilities / run / inspect / cleanup |
@@ -92,6 +92,6 @@ Running → Collecting → Cleaning → Completed
 资源限制与进程终止由两层机制共同保证：
 
 1. **Supervisor 层（跨平台）**：wall-time 定时器、输出限额（有界缓冲 + 触发终止）、rlimit（NOFILE/FSIZE/CPU/AS）、进程组 SIGTERM→SIGKILL 升级、退出后进程组清扫。
-2. **Provider 层（平台）**：Linux 上为 cgroups v2（memory.max / cpu.max / pids.max / cgroup.kill）+ namespaces + seccomp。
+2. **Provider 层（平台）**：Linux 上为 cgroups v2（memory.max / cpu.max / pids.max / cgroup.kill）+ namespaces + seccomp；macOS 上为 Seatbelt 拒绝式 profile + supervisor 看门狗（反应式）；Windows 上为 Job Objects（内存/进程数/CPU rate 硬限 + TerminateJobObject）。
 
 监控永远不能替代强制（§7.4）；cgroup 事件（memory.events 的 oom_kill、pids.events 的 max）是状态判定的**确定性证据**，而退出码本身永远不能单独证明 OOM。

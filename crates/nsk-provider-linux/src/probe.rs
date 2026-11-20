@@ -196,6 +196,10 @@ pub async fn probe_with_config(config: &LinuxProviderConfig) -> PlatformCapabili
     caps.isolation.network_namespace = ns_status;
     caps.isolation.ipc_namespace = ns_status;
     caps.isolation.uts_namespace = ns_status;
+    // Domain-level views: on Linux these are exactly the namespace
+    // mechanisms (the resolver matches domains against these fields).
+    caps.isolation.filesystem_isolation = ns_status;
+    caps.isolation.network_isolation = ns_status;
 
     // cgroups v2 (§10.7).
     let cgroup_probe = probe_cgroups(&config.cgroup_root).await;
@@ -236,6 +240,13 @@ pub async fn probe_with_config(config: &LinuxProviderConfig) -> PlatformCapabili
         CapabilityStatus::Unknown
     };
     caps.resources.rlimits = CapabilityStatus::Available;
+    // RLIMIT_AS and RLIMIT_NPROC are usable (degraded) memory/process
+    // rungs on Linux.
+    caps.resources.rlimit_address_space = CapabilityStatus::Available;
+    caps.resources.rlimit_processes = CapabilityStatus::Available;
+    caps.resources.job_objects = CapabilityStatus::Unsupported;
+    caps.resources.memory_watchdog = CapabilityStatus::Unsupported;
+    caps.resources.process_watchdog = CapabilityStatus::Unsupported;
     caps.resources.disk_quota = CapabilityStatus::Unsupported;
     diagnostics.push(Diagnostic::warning(
         codes::RESOURCE_LIMIT_UNAVAILABLE,

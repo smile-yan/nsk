@@ -343,7 +343,9 @@ pub fn exit_info_from(status: &std::process::ExitStatus) -> ExitInfo {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use super::*;
+    #[cfg(unix)]
     use crate::process::ProcessSpec;
 
     #[cfg(unix)]

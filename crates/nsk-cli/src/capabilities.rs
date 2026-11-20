@@ -33,6 +33,8 @@ pub fn flatten(caps: &PlatformCapabilities) -> Vec<CapabilityRow> {
         ("isolation.network_namespace", iso.network_namespace),
         ("isolation.ipc_namespace", iso.ipc_namespace),
         ("isolation.uts_namespace", iso.uts_namespace),
+        ("isolation.filesystem_isolation", iso.filesystem_isolation),
+        ("isolation.network_isolation", iso.network_isolation),
     ] {
         rows.push(CapabilityRow {
             name: name.into(),
@@ -53,6 +55,11 @@ pub fn flatten(caps: &PlatformCapabilities) -> Vec<CapabilityRow> {
         ("resources.controllers.memory", res.controllers.memory),
         ("resources.controllers.pids", res.controllers.pids),
         ("resources.rlimits", res.rlimits),
+        ("resources.rlimit_address_space", res.rlimit_address_space),
+        ("resources.rlimit_processes", res.rlimit_processes),
+        ("resources.job_objects", res.job_objects),
+        ("resources.memory_watchdog", res.memory_watchdog),
+        ("resources.process_watchdog", res.process_watchdog),
         ("resources.process_tree_kill", res.process_tree_kill),
         ("resources.disk_quota", res.disk_quota),
     ] {
@@ -78,7 +85,9 @@ pub fn flatten(caps: &PlatformCapabilities) -> Vec<CapabilityRow> {
     rows
 }
 
-/// Does this report allow *any* isolated execution?
+/// Does this report allow *any* isolated execution? (Domain-level check:
+/// filesystem or network isolation by any mechanism.)
 pub fn isolation_usable(caps: &PlatformCapabilities) -> bool {
-    caps.isolation.launcher.status.is_available()
+    caps.isolation.filesystem_isolation.is_available()
+        || caps.isolation.network_isolation.is_available()
 }

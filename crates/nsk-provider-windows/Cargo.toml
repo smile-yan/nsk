@@ -5,15 +5,33 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 authors.workspace = true
-description = "NSK nsk-provider-windows"
+description = "NSK Windows provider (Job Objects MVP)"
 
 [dependencies]
 nsk-core = { workspace = true }
+nsk-policy = { workspace = true }
 nsk-provider = { workspace = true }
+nsk-supervisor = { workspace = true }
+nsk-resource = { workspace = true }
+nsk-workspace = { workspace = true }
+
 async-trait = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true }
+tracing = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+    "Win32_System_Diagnostics_ToolHelp",
+] }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+nsk-runtime = { workspace = true }
 
 [lints]
 workspace = true
-

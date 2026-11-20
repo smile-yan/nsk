@@ -120,25 +120,34 @@ impl CgroupManager {
             self.write_file("cgroup.kill", "1")?;
             return Ok(self.current_pids().len());
         }
-        // Fallback: repeated SIGKILL over cgroup.procs.
-        let mut killed = 0;
-        for round in 0..5 {
-            let pids = self.current_pids();
-            if pids.is_empty() {
-                break;
-            }
-            for pid in &pids {
-                // SAFETY: kill(2) wrapper.
-                unsafe {
-                    libc::kill(*pid as libc::pid_t, libc::SIGKILL);
+        // Fallback: repeated SIGKILL over cgroup.procs (Unix; Windows
+        // hosts only compile-check this crate and have no kill(2)).
+        #[cfg(unix)]
+        let result = {
+            let mut killed = 0;
+            for round in 0..5 {
+                let pids = self.current_pids();
+                if pids.is_empty() {
+                    break;
                 }
-                killed += 1;
+                for pid in &pids {
+                    // SAFETY: kill(2) wrapper.
+                    unsafe {
+                        libc::kill(*pid as libc::pid_t, libc::SIGKILL);
+                    }
+                    killed += 1;
+                }
+                if round < 4 {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
             }
-            if round < 4 {
-                std::thread::sleep(Duration::from_millis(10));
-            }
-        }
-        Ok(killed)
+            Ok(killed)
+        };
+        #[cfg(not(unix))]
+        let result = Err(SandboxError::ResourceLimit(
+            "cgroup kill fallback requires a Unix host".into(),
+        ));
+        result
     }
 
     /// Observe metrics (§10.7 memory/cpu/pid monitoring).

@@ -18,7 +18,7 @@ NSK 的目标是限制**执行不受信任程序**的影响范围。防御对象
 
 内核拒绝执行的三条防线：
 
-1. **Policy Engine（创建时）**：`nsk-policy::effective::resolve` 将请求与 Provider 能力报告匹配。任何被请求但不可用的隔离域 → `CapabilityInsufficient` 错误。**Provider 能力报告必须诚实**（§2.6）：macOS/Windows Provider 与 Mock Provider 全部如实上报 `Unsupported`。
+1. **Policy Engine（创建时）**：`nsk-policy::effective::resolve` 将请求与 Provider 能力报告匹配。任何被请求但不可用的隔离域 → `CapabilityInsufficient` 错误。**Provider 能力报告必须诚实**（§2.6）：macOS（Seatbelt PoC）/ Windows（Job Objects MVP）/ Mock Provider 按六态如实上报——没有的机制（如 Windows 的 fs/network 隔离、macOS 的 namespace）就是 `Unsupported`，策略请求即拒绝。
 2. **Provider prepare（启动前）**：即使策略被误放行，`prepare` 在无法建立隔离时返回错误（如 Linux Provider 在 cgroup 被要求但不可用时拒绝）。
 3. **Spawn 后 attach 失败即杀**：cgroup attach 失败立即终止刚启动的进程。
 

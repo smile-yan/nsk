@@ -18,14 +18,16 @@ mod run;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum ProviderChoice {
-    /// Platform default (Linux provider on Linux; fail-closed stubs
-    /// elsewhere).
+    /// Platform default (Linux on Linux, Seatbelt PoC on macOS,
+    /// Job Objects MVP on Windows).
     Platform,
     /// Linux provider explicitly (works only on Linux hosts).
     Linux,
-    /// macOS provider stub (always fails closed).
+    /// macOS provider (Seatbelt PoC: workspace-write + network isolation,
+    /// watchdog limits).
     Macos,
-    /// Windows provider stub (always fails closed).
+    /// Windows provider (Job Objects MVP: process-set + resource limits,
+    /// no fs/network isolation).
     Windows,
     /// Test provider WITHOUT isolation — explicit opt-in only.
     Mock,
@@ -90,6 +92,10 @@ enum Commands {
         /// the program then runs WITHOUT isolation on the host).
         #[arg(long)]
         no_isolation: bool,
+        /// Drop isolation domains the selected provider cannot provide
+        /// (probed at runtime, loudly recorded in the result diagnostics).
+        #[arg(long)]
+        relax_unsupported: bool,
         /// Emit the full result as JSON.
         #[arg(long)]
         json: bool,
@@ -213,6 +219,7 @@ async fn main() {
             keep_workspace,
             provider,
             no_isolation,
+            relax_unsupported,
             json,
             command,
         } => {
@@ -270,6 +277,29 @@ async fn main() {
             };
             if no_isolation {
                 run::relax_isolation(&mut spec);
+            }
+            if relax_unsupported {
+                // Probe once and drop exactly the domains the provider
+                // cannot honor — the result diagnostics record every drop.
+                match provider.probe().await {
+                    Ok(caps) => {
+                        let dropped = run::relax_unsupported_domains(&mut spec, &caps);
+                        if dropped.is_empty() {
+                            eprintln!(
+                                "--relax-unsupported: nothing to relax (all requested domains are available)"
+                            );
+                        } else {
+                            eprintln!(
+                                "WARNING: --relax-unsupported dropped unavailable domains: {}",
+                                dropped.join(", ")
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("probe failed: {e}");
+                        std::process::exit(4);
+                    }
+                }
             }
 
             let runtime = match run::build_runtime(provider).await {

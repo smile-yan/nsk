@@ -51,25 +51,28 @@ jobs:
           NSK_STRESS_ITERS: 200
 
   macos-tests:
-    name: tests (macOS, core + mock)
+    name: tests (macOS, Seatbelt acceptance)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # The Linux provider must at least compile on macOS hosts; the probe
-      # reports honestly instead of pretending.
+      # reports honestly instead of pretending. The macOS provider runs its
+      # full Seatbelt acceptance suite here.
       - run: cargo test --workspace
+      - run: cargo test -p nsk-provider-macos --test isolation_macos -- --test-threads=1
       - run: cargo build -p nsk-cli
 
-  windows-build:
-    name: build (windows)
+  windows-tests:
+    name: tests (windows, Job Objects)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      # Windows provider is a fail-closed stub in phase 1; the workspace
-      # must still build cleanly.
+      # Core + policy + resource crates must run on Windows hosts; the
+      # Windows provider (Job Objects MVP) runs its full acceptance suite.
+      - run: cargo test -p nsk-core -p nsk-policy -p nsk-resource -p nsk-workspace -p nsk-provider -p nsk-provider-windows
+      - run: cargo test -p nsk-provider-windows --test job_windows -- --test-threads=1
       - run: cargo build --workspace
-      - run: cargo test -p nsk-core -p nsk-policy -p nsk-resource -p nsk-workspace

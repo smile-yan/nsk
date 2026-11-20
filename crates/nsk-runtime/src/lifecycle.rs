@@ -283,7 +283,17 @@ fn derive_status(outcome: &ExecOutcome, usage: &ResourceUsage, cancelled: bool) 
                 if cancelled {
                     SandboxStatus::Cancelled
                 } else {
-                    SandboxStatus::NonZeroExit
+                    // Provider-confirmed limit kills (watchdogs, Job
+                    // Objects) are deterministic evidence — the provider
+                    // terminated the tree itself because a limit was
+                    // exceeded (§7.4).
+                    if usage.oom_events.unwrap_or(0) > 0 {
+                        SandboxStatus::MemoryLimitExceeded
+                    } else if usage.pids_limit_hits.unwrap_or(0) > 0 {
+                        SandboxStatus::ProcessLimitExceeded
+                    } else {
+                        SandboxStatus::NonZeroExit
+                    }
                 }
             }
         },
@@ -443,6 +453,53 @@ mod tests {
         };
         assert_eq!(
             derive_status(&cancelled, &ResourceUsage::default(), true),
+            SandboxStatus::Cancelled
+        );
+    }
+
+    #[test]
+    fn provider_confirmed_kills_classify_by_evidence() {
+        let external_kill = ExecOutcome {
+            exit: ExitInfo::from_exit_code(1),
+            reason: OutcomeReason::Terminated(nsk_supervisor::terminate::TerminateKind::External),
+            ..ExecOutcome {
+                pid: 1,
+                exit: ExitInfo::from_exit_code(0),
+                wall_time: Duration::from_millis(10),
+                reason: OutcomeReason::Exit,
+                output: Default::default(),
+            }
+        };
+
+        // Watchdog-confirmed memory kill → deterministic memory status.
+        let mem_usage = ResourceUsage {
+            oom_events: Some(1),
+            ..Default::default()
+        };
+        assert_eq!(
+            derive_status(&external_kill, &mem_usage, false),
+            SandboxStatus::MemoryLimitExceeded
+        );
+
+        // Watchdog-confirmed process kill → deterministic process status.
+        let pid_usage = ResourceUsage {
+            pids_limit_hits: Some(1),
+            ..Default::default()
+        };
+        assert_eq!(
+            derive_status(&external_kill, &pid_usage, false),
+            SandboxStatus::ProcessLimitExceeded
+        );
+
+        // Without evidence the kill stays NonZeroExit (no guessing, §7.4).
+        assert_eq!(
+            derive_status(&external_kill, &ResourceUsage::default(), false),
+            SandboxStatus::NonZeroExit
+        );
+
+        // Cancellation wins over evidence (user asked for it).
+        assert_eq!(
+            derive_status(&external_kill, &mem_usage, true),
             SandboxStatus::Cancelled
         );
     }
