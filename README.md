@@ -75,13 +75,14 @@ Windows Provider：[docs/windows-provider.md](docs/windows-provider.md)。
 
 ## 平台能力矩阵
 
-| 平台 | 文件系统隔离 | 网络隔离 | 内存限制 | 进程数限制 | 机制 |
-| --- | --- | --- | --- | --- | --- |
-| Linux | ✅（mount ns） | ✅（net ns） | ✅ cgroup v2 | ✅ cgroup pids | bubblewrap + cgroups |
-| macOS | ✅ 写隔离（Seatbelt） | ✅（Seatbelt） | ⚠️ 看门狗 | ⚠️ 看门狗 | sandbox-exec 拒绝式 profile |
-| Windows | ❌ fail-closed | ❌ fail-closed | ✅ Job Object | ✅ Job Object | CREATE_SUSPENDED → 作业分配 |
+| 平台 | 文件系统隔离 | 网络隔离 | 内存限制 | 进程数限制 | CPU 限制 | 机制 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Linux | ✅（mount ns） | ✅（net ns） | ✅ cgroup v2 | ✅ cgroup pids | ✅ cgroup cpu.max | bubblewrap + cgroups |
+| macOS | ✅ 写隔离（Seatbelt） | ✅（Seatbelt） | ⚠️ 看门狗 | ⚠️ 看门狗 | ⚠️ 配额降级告警（cpu_time 经 rlimit） | sandbox-exec + supervisor 看门狗 |
+| Windows | ❌ fail-closed | ❌ fail-closed | ✅ Job Object | ✅ Job Object | ✅ Job Object CPU rate 硬顶 | CREATE_SUSPENDED → 作业分配 |
 
-⚠️ = 反应式执行（有超调窗口，诊断明示）；❌ = 策略请求时 fail-closed 拒绝。
+⚠️ = 反应式执行（有超调窗口，诊断明示）；macOS CPU 配额无强制机制，降级为
+告警并明示（cpu_time 经 rlimit 仍强制）；❌ = 策略请求时 fail-closed 拒绝。
 
 ## 安全特性
 
@@ -94,7 +95,7 @@ Windows Provider：[docs/windows-provider.md](docs/windows-provider.md)。
 
 ## 测试
 
-约 260 项测试：单元、集成、安全（攻击矩阵）、压力（`--ignored`）、恢复，
+约 270 项测试：单元、集成、安全（攻击矩阵）、压力（`--ignored`）、恢复，
 外加平台验收（Linux §20.2 隔离矩阵、macOS Seatbelt 验收、Windows Job
 Object 验收）。所有涉及进程的测试共享单一 runtime 以避免 SIGCHLD 竞争。
 详见 [docs/testing.md](docs/testing.md)。
