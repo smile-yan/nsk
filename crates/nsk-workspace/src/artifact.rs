@@ -103,9 +103,11 @@ mod tests {
         let (arts, truncated) = collect_artifacts(dir.path());
         assert!(!truncated);
         assert_eq!(arts.len(), 4); // out/, out/a.txt, out/sub/, out/sub/b.bin
+        // Compare as paths: `relative_path` uses the host separator
+        // (backslash on Windows), so string equality would be platform-bound.
         let a = arts
             .iter()
-            .find(|a| a.relative_path == "out/a.txt")
+            .find(|a| Path::new(&a.relative_path) == Path::new("out/a.txt"))
             .expect("a.txt");
         assert_eq!(a.size_bytes, 5);
         assert!(!a.is_dir);
