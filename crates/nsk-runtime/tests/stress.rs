@@ -38,6 +38,13 @@ fn relaxed_policy() -> SandboxPolicy {
     p.filesystem.deny_host_paths = false;
     p.security.no_new_privileges = false;
     p.security.drop_privileges = false;
+    // The mock provider applies policy rlimits to real spawns, and
+    // RLIMIT_NPROC counts *all* processes of the uid — CI runner job users
+    // already exceed minimal()'s default of 16, making any fork inside the
+    // sandboxed shell fail (EAGAIN). These tests do not exercise process
+    // limits, so grant a generous budget.
+    p.resources.max_processes = 1024;
+    p.process.max_processes = 1024;
     p
 }
 

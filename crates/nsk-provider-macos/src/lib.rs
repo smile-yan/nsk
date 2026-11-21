@@ -431,7 +431,10 @@ impl SandboxProvider for MacOSProvider {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
+    // Used only by macOS-gated tests below (no dead code on Linux CI).
+    #[cfg(target_os = "macos")]
     use nsk_core::capability::CapabilityStatus;
+    #[cfg(target_os = "macos")]
     use nsk_core::policy::IsolationPolicy;
     use nsk_core::spec::{CommandSpec, SandboxSpec, WorkspaceSpec};
 
@@ -448,6 +451,7 @@ mod tests {
 
     /// macOS-compatible minimal policy (domains Seatbelt cannot provide are
     /// off; see resolver tests).
+    #[cfg(target_os = "macos")]
     fn macos_policy() -> nsk_core::policy::SandboxPolicy {
         let mut p = nsk_core::policy::SandboxPolicy::minimal();
         p.isolation = IsolationPolicy {
