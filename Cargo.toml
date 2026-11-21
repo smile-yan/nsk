@@ -22,7 +22,7 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 rust-version = "1.85"
-repository = "https://example.invalid/nsk"
+repository = "https://github.com/smile-yan/erust"
 authors = ["NSK contributors"]
 
 [workspace.lints.rust]
@@ -37,18 +37,19 @@ expect_used = "warn"
 
 [workspace.dependencies]
 # Internal crates
-nsk-core = { path = "crates/nsk-core" }
-nsk-policy = { path = "crates/nsk-policy" }
-nsk-runtime = { path = "crates/nsk-runtime" }
-nsk-supervisor = { path = "crates/nsk-supervisor" }
-nsk-resource = { path = "crates/nsk-resource" }
-nsk-workspace = { path = "crates/nsk-workspace" }
-nsk-provider = { path = "crates/nsk-provider" }
-nsk-provider-linux = { path = "crates/nsk-provider-linux" }
-nsk-provider-macos = { path = "crates/nsk-provider-macos" }
-nsk-provider-windows = { path = "crates/nsk-provider-windows" }
-nsk-scheduler = { path = "crates/nsk-scheduler" }
-nsk-cli = { path = "crates/nsk-cli" }
+# version 与 path 并存：workspace 内按 path 解析，发布到 crates.io 时按 version 解析。
+nsk-core = { path = "crates/nsk-core", version = "0.1.0" }
+nsk-policy = { path = "crates/nsk-policy", version = "0.1.0" }
+nsk-runtime = { path = "crates/nsk-runtime", version = "0.1.0" }
+nsk-supervisor = { path = "crates/nsk-supervisor", version = "0.1.0" }
+nsk-resource = { path = "crates/nsk-resource", version = "0.1.0" }
+nsk-workspace = { path = "crates/nsk-workspace", version = "0.1.0" }
+nsk-provider = { path = "crates/nsk-provider", version = "0.1.0" }
+nsk-provider-linux = { path = "crates/nsk-provider-linux", version = "0.1.0" }
+nsk-provider-macos = { path = "crates/nsk-provider-macos", version = "0.1.0" }
+nsk-provider-windows = { path = "crates/nsk-provider-windows", version = "0.1.0" }
+nsk-scheduler = { path = "crates/nsk-scheduler", version = "0.1.0" }
+nsk-cli = { path = "crates/nsk-cli", version = "0.1.0" }
 
 # External dependencies
 serde = { version = "1", features = ["derive"] }
