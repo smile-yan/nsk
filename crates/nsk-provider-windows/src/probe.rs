@@ -79,11 +79,15 @@ async fn probe_capabilities_windows() -> PlatformCapabilities {
     // Restricted token: machinery verification (spawn integration pending).
     let privilege_dropping = match crate::token::RestrictedToken::from_current_process() {
         Ok(token) => match token.enabled_privileges() {
-            Ok(0) => {
+            // Win32 (CreateRestrictedToken + DISABLE_MAX_PRIVILEGE) deletes
+            // every privilege except SeChangeNotifyPrivilege, so 0..1
+            // enabled privileges is the verified, expected outcome.
+            Ok(n) if n <= 1 => {
                 diagnostics.push(Diagnostic::info(
                     codes::CAPABILITY_UNVERIFIED,
-                    "restricted-token machinery verified (all privileges disabled); \
-                     process creation with the token is not wired in the MVP spawn path — \
+                    "restricted-token machinery verified (only SeChangeNotifyPrivilege \
+                     may remain per Win32); process creation with the token is not \
+                     wired in the MVP spawn path — \
                      privileges are NOT reduced for sandboxed processes yet",
                 ));
                 CapabilityStatus::NotConfigured

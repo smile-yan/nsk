@@ -2,7 +2,8 @@
 //!
 //! This module proves and exercises the token machinery: duplicating the
 //! caller's primary token and deriving a restricted token with
-//! `DISABLE_MAX_PRIVILEGE` (every privilege disabled/removed). This is the
+//! `DISABLE_MAX_PRIVILEGE` (every privilege removed except
+//! `SeChangeNotifyPrivilege`, per the Win32 contract). This is the
 //! foundation for reduced-privilege process creation.
 //!
 //! MVP boundary (honest reporting, §2.6): creating a process *with* the
@@ -35,8 +36,8 @@ unsafe impl Send for RestrictedToken {}
 unsafe impl Sync for RestrictedToken {}
 
 impl RestrictedToken {
-    /// Derive a restricted primary token with all privileges disabled from
-    /// the current process token.
+    /// Derive a restricted primary token with all privileges removed from
+    /// the current process token (Win32 keeps `SeChangeNotifyPrivilege`).
     ///
     /// `CreateRestrictedToken` requires no special privilege, so this
     /// works for ordinary user processes (probed/verified, not assumed).
@@ -98,8 +99,8 @@ impl RestrictedToken {
         }
     }
 
-    /// Count of privileges still enabled in the token (must be 0 after
-    /// `DISABLE_MAX_PRIVILEGE`).
+    /// Count of privileges still enabled in the token (at most
+    /// `SeChangeNotifyPrivilege` after `DISABLE_MAX_PRIVILEGE`).
     pub fn enabled_privileges(&self) -> Result<usize, SandboxError> {
         // SAFETY: query protocol with a grow-once buffer; the returned
         // buffer is read before being freed.
@@ -199,10 +200,14 @@ mod tests {
             return;
         }
         let token = RestrictedToken::from_current_process().expect("token machinery");
-        assert_eq!(
-            token.enabled_privileges().expect("privilege query"),
-            0,
-            "DISABLE_MAX_PRIVILEGE must leave no enabled privileges"
+        // Win32 contract (CreateRestrictedToken + DISABLE_MAX_PRIVILEGE):
+        // every privilege is deleted except SeChangeNotifyPrivilege, so at
+        // most one privilege stays enabled.
+        let enabled = token.enabled_privileges().expect("privilege query");
+        assert!(
+            enabled <= 1,
+            "DISABLE_MAX_PRIVILEGE must leave at most \
+             SeChangeNotifyPrivilege, got {enabled}"
         );
     }
 

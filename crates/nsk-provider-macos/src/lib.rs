@@ -470,6 +470,9 @@ mod tests {
         assert_eq!(a, b);
     }
 
+    // Sandbox-exec facts are only meaningful on macOS; on Linux CI this
+    // provider is unavailable (probe reports Unsupported).
+    #[cfg(target_os = "macos")]
     #[tokio::test]
     async fn probe_reports_honest_capabilities() {
         let caps = provider().probe().await.unwrap();
@@ -499,6 +502,7 @@ mod tests {
         assert!(matches!(err, SandboxError::CapabilityInsufficient { .. }));
     }
 
+    #[cfg(target_os = "macos")]
     #[tokio::test]
     async fn prepare_refuses_deny_host_paths() {
         let caps = provider().probe().await.unwrap();
@@ -520,6 +524,7 @@ mod tests {
         assert!(err.to_string().contains("deny_host_paths"));
     }
 
+    #[cfg(target_os = "macos")]
     #[tokio::test]
     async fn prepare_refuses_isolate_root() {
         let caps = provider().probe().await.unwrap();
@@ -541,6 +546,7 @@ mod tests {
         assert!(err.to_string().contains("isolate_root"));
     }
 
+    #[cfg(target_os = "macos")]
     #[tokio::test]
     async fn prepare_builds_seatbelt_plan() {
         let caps = provider().probe().await.unwrap();
