@@ -22,7 +22,7 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 rust-version = "1.85"
-repository = "https://github.com/smile-yan/erust"
+repository = "https://github.com/smile-yan/nsk"
 authors = ["NSK contributors"]
 
 [workspace.lints.rust]
