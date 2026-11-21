@@ -1,0 +1,50 @@
+[package]
+name = "nsk-examples"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "NSK usage examples — runnable, compile-checked scenarios"
+publish = false
+
+[dependencies]
+nsk-core = { workspace = true }
+nsk-cli = { workspace = true }
+nsk-runtime = { workspace = true }
+nsk-scheduler = { workspace = true }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true
+
+# The example sources sit flat at the crate root (this directory *is* the
+# examples directory), so each target is declared explicitly instead of
+# relying on the default `examples/` auto-discovery.
+[[example]]
+name = "hello_sandbox"
+path = "hello_sandbox.rs"
+
+[[example]]
+name = "resource_limits"
+path = "resource_limits.rs"
+
+[[example]]
+name = "wall_time_timeout"
+path = "wall_time_timeout.rs"
+
+[[example]]
+name = "lifecycle_events"
+path = "lifecycle_events.rs"
+
+[[example]]
+name = "batch_scheduler"
+path = "batch_scheduler.rs"
+
+[[example]]
+name = "cli_flow"
+path = "cli_flow.rs"

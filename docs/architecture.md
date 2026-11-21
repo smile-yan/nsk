@@ -87,6 +87,9 @@ Running → Collecting → Cleaning → Completed
 | `nsk-scheduler` | FIFO 队列、全局并发预算、任务取消 |
 | `nsk-cli` | doctor / capabilities / run / inspect / cleanup |
 
+`nsk-examples`（workspace 成员 [examples/](../examples/)）不在内核分层内：
+可运行、随 CI 编译检查的使用示例集，只依赖内核公共 API 与 CLI 库。
+
 ## 双重强制（Belt & Braces）
 
 资源限制与进程终止由两层机制共同保证：

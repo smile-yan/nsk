@@ -324,6 +324,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "nsk-examples"
+version = "0.1.0"
+dependencies = [
+ "nsk-cli",
+ "nsk-core",
+ "nsk-runtime",
+ "nsk-scheduler",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "nsk-policy"
 version = "0.1.0"
 dependencies = [

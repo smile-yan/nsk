@@ -14,6 +14,7 @@ members = [
     "crates/nsk-provider-windows",
     "crates/nsk-scheduler",
     "crates/nsk-cli",
+    "examples",
 ]
 
 [workspace.package]
@@ -47,6 +48,7 @@ nsk-provider-linux = { path = "crates/nsk-provider-linux" }
 nsk-provider-macos = { path = "crates/nsk-provider-macos" }
 nsk-provider-windows = { path = "crates/nsk-provider-windows" }
 nsk-scheduler = { path = "crates/nsk-scheduler" }
+nsk-cli = { path = "crates/nsk-cli" }
 
 # External dependencies
 serde = { version = "1", features = ["derive"] }

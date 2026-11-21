@@ -55,11 +55,14 @@ let result = runtime.execute(spec).await?; // create → start → wait (+cleanu
 println!("{:?} stdout={}", result.status, result.output.stdout.text());
 ```
 
-完整示例：[examples](crates/nsk-runtime/examples/)（basic_execution / policy / monitoring）。
+完整示例：[examples/](examples/)（可运行场景集：隔离执行、资源限制、超时、
+事件流、批量调度、CLI 代码路径，`cargo run -p nsk-examples --example <名>`）；
+crate 级最小 API 示例：[crates/nsk-runtime/examples/](crates/nsk-runtime/examples/)（basic_execution / policy / monitoring）。
 
 ## 架构（简）
 
-12 个 crate 的模块化内核，五层结构，依赖关系由 Cargo 强制（Core 零平台依赖 → Policy 纯逻辑 → Workspace/Resource → Supervisor → Provider Trait → 平台 Provider → Runtime 装配 → Scheduler → CLI）：
+12 个内核 crate 的模块化内核（另有 [examples/](examples/) 可运行示例集，
+不属于内核分层），五层结构，依赖关系由 Cargo 强制（Core 零平台依赖 → Policy 纯逻辑 → Workspace/Resource → Supervisor → Provider Trait → 平台 Provider → Runtime 装配 → Scheduler → CLI）：
 
 ```
 nsk-core ─ nsk-policy ─ nsk-workspace ─ nsk-resource ─ nsk-supervisor

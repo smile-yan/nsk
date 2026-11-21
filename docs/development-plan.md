@@ -21,6 +21,7 @@
 | 14 | Stability & Security（§16） | ✅ 完成* | 安全/压力/恢复测试矩阵、CI 矩阵 |
 | 15 | Windows Provider（§11） | ✅ 完成 | **Job Objects MVP**：CREATE_SUSPENDED→作业分配→恢复、内存/进程数/CPU rate 硬限、UI 限制、整树终止、用量核算；受限令牌机制实现并实测（spawn 接线为后续项，如实报告）；AppContainer 仅检测（§11.5 安全验证前置）；windows CI 集成测试 |
 | 16 | macOS Provider（§12） | ✅ 完成 | **Seatbelt PoC**：sandbox-exec 拒绝式 profile（workspace 写隔离 + 网络策略 + setuid 拒绝）、探针功能验证、supervisor 看门狗（内存/进程数反应式执行）、macOS 验收测试；macOS CI 覆盖 |
+| 17 | 使用示例集（文档/开发体验） | ✅ 完成 | [examples/](../examples/)（`nsk-examples`，workspace 成员）：6 个可运行单文件场景（隔离执行/资源限制/超时/事件/调度/CLI 代码路径）+ 示例目录 README，随 CI 编译与 clippy 检查 |
 
 \* Linux 特定路径（bwrap/cgroups/seccomp 运行时行为）已在 macOS 开发环境
 **编译验证 + 单元测试**，**运行时验收依赖 Linux CI**（`.github/workflows/ci.yml`
