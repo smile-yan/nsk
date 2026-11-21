@@ -128,9 +128,12 @@ pub trait ProviderResources: Send + Sync + std::fmt::Debug {
 ///
 /// Single translation point from policy values to supervisor enforcement so
 /// every provider applies identical wall-time, output and termination rules.
+/// `platform_kill` is the provider's instant tree-kill mechanism (Job
+/// Objects on Windows); `None` on providers covered by Unix group signals.
 pub fn supervisor_config(
     policy: &EffectivePolicy,
     tap: Option<tokio::sync::broadcast::Sender<nsk_supervisor::output::SupervisorEvent>>,
+    platform_kill: Option<nsk_supervisor::monitor::PlatformKill>,
 ) -> nsk_supervisor::monitor::SupervisorConfig {
     let output = &policy.requested.output;
     let resources = &policy.requested.resources;
@@ -146,6 +149,7 @@ pub fn supervisor_config(
         terminate_on_limit: output.terminate_on_limit,
         retain_per_stream,
         tap,
+        platform_kill,
         ..Default::default()
     }
 }

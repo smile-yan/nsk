@@ -60,7 +60,8 @@ impl JobObject {
         use windows_sys::Win32::System::JobObjects::{
             CreateJobObjectW, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE,
             JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
-            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_BASIC_LIMIT_INFORMATION,
+            JOB_OBJECT_LIMIT_JOB_MEMORY, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            JOB_OBJECT_LIMIT_PROCESS_MEMORY, JOBOBJECT_BASIC_LIMIT_INFORMATION,
             JOBOBJECT_CPU_RATE_CONTROL_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0,
             JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectCpuRateControlInformation,
             JobObjectExtendedLimitInformation, SetInformationJobObject,
@@ -84,6 +85,12 @@ impl JobObject {
             if let Some(pids) = limits.max_processes {
                 flags |= JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
                 basic.ActiveProcessLimit = pids;
+            }
+            // The memory limits below are only consulted by the kernel when
+            // their flag bits are set — without them the commit caps are
+            // silently ignored (§11.3).
+            if limits.memory_bytes.is_some() {
+                flags |= JOB_OBJECT_LIMIT_PROCESS_MEMORY | JOB_OBJECT_LIMIT_JOB_MEMORY;
             }
             basic.LimitFlags = flags;
             let ext = JOBOBJECT_EXTENDED_LIMIT_INFORMATION {

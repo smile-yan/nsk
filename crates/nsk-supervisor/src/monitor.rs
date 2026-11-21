@@ -59,6 +59,26 @@ pub struct ExecOutcome {
     pub output: crate::output::OutputSnapshot,
 }
 
+/// Platform-specific instant tree-kill (e.g. `TerminateJobObject`).
+///
+/// The supervisor owns *when* to escalate; the platform mechanism owns
+/// *how*. Every termination path invokes it alongside the Unix group
+/// escalation, which is a no-op on non-Unix platforms — without this hook,
+/// Windows sandboxes are never killed on deadline/cancel (§8.4).
+pub struct PlatformKill(pub std::sync::Arc<dyn Fn() + Send + Sync>);
+
+impl std::fmt::Debug for PlatformKill {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PlatformKill(<hook>)")
+    }
+}
+
+impl Clone for PlatformKill {
+    fn clone(&self) -> Self {
+        Self(std::sync::Arc::clone(&self.0))
+    }
+}
+
 /// Supervisor configuration (limits and timing).
 #[derive(Debug, Clone)]
 pub struct SupervisorConfig {
@@ -78,6 +98,8 @@ pub struct SupervisorConfig {
     pub collector_drain_grace: Duration,
     /// Event tap for streaming output chunks and termination notices.
     pub tap: Option<broadcast::Sender<SupervisorEvent>>,
+    /// Platform kill mechanism (Job Objects on Windows, §11.3).
+    pub platform_kill: Option<PlatformKill>,
 }
 
 impl Default for SupervisorConfig {
@@ -92,7 +114,15 @@ impl Default for SupervisorConfig {
             terminate_on_limit: true,
             collector_drain_grace: Duration::from_millis(300),
             tap: None,
+            platform_kill: None,
         }
+    }
+}
+
+/// Invoke the platform kill hook, if any (instant, best-effort).
+fn platform_kill(config: &SupervisorConfig) {
+    if let Some(kill) = &config.platform_kill {
+        (kill.0)();
     }
 }
 
@@ -229,6 +259,7 @@ async fn monitor_loop(
             }, if !escalation_done => {
                 reason = OutcomeReason::WallTimeExceeded;
                 emit(&config.tap, SupervisorEvent::Terminating(TerminateKind::Timeout));
+                platform_kill(&config);
                 escalate_group_termination(pid, config.terminate_grace).await;
                 escalation_done = true;
                 cancel.cancel(); // stop stdin writer & collectors
@@ -237,6 +268,7 @@ async fn monitor_loop(
             _ = cancel.cancelled(), if !escalation_done => {
                 reason = OutcomeReason::CancelRequested;
                 emit(&config.tap, SupervisorEvent::Terminating(TerminateKind::Cancel));
+                platform_kill(&config);
                 escalate_group_termination(pid, config.terminate_grace).await;
                 escalation_done = true;
                 cancel.cancel(); // stop stdin writer & collectors
@@ -252,6 +284,7 @@ async fn monitor_loop(
                             other => OutcomeReason::Terminated(other),
                         };
                         emit(&config.tap, SupervisorEvent::Terminating(kind));
+                        platform_kill(&config);
                         escalate_group_termination(pid, config.terminate_grace).await;
                         escalation_done = true;
                         cancel.cancel(); // stop stdin writer & collectors
@@ -259,6 +292,7 @@ async fn monitor_loop(
                 } else {
                     // Sender dropped: treat as external termination request.
                     reason = OutcomeReason::Terminated(TerminateKind::External);
+                    platform_kill(&config);
                     escalate_group_termination(pid, config.terminate_grace).await;
                     escalation_done = true;
                 }
@@ -271,6 +305,7 @@ async fn monitor_loop(
                     if config.terminate_on_limit {
                         reason = OutcomeReason::OutputLimitExceeded(crossed);
                         emit(&config.tap, SupervisorEvent::Terminating(TerminateKind::Limit));
+                        platform_kill(&config);
                         escalate_group_termination(pid, config.terminate_grace).await;
                         escalation_done = true;
                         cancel.cancel(); // stop stdin writer & collectors

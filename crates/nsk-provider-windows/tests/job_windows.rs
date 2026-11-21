@@ -125,10 +125,10 @@ async fn active_process_limit_blocks_children() {
     let Some(rt) = build_runtime().await else {
         return;
     };
-    // cmd tries to start a child (which must fail under ActiveProcessLimit
-    // = 1) and then reports a non-zero exit.
-    let mut s =
-        spec(CommandSpec::new("cmd.exe").args(["/C", "start /WAIT /B cmd /C exit 7 & exit 0"]));
+    // start /WAIT propagates the child's result; under ActiveProcessLimit
+    // = 1 the child cannot join the job, `start` fails, and cmd reports a
+    // non-zero exit. (A trailing `& exit 0` would mask the failure.)
+    let mut s = spec(CommandSpec::new("cmd.exe").args(["/C", "start /WAIT /B cmd /C exit 0"]));
     s.policy.resources.wall_time = Duration::from_secs(20);
     s.policy.resources.max_processes = 1;
     s.policy.process.max_processes = 1;

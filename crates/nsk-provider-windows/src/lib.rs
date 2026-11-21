@@ -316,9 +316,19 @@ impl SandboxProvider for WindowsProvider {
             // (attach) before its first instruction runs.
             process_spec.creation_flags = CREATE_SUSPENDED;
 
+            // The supervisor owns *when* to escalate; on Windows *how* is
+            // TerminateJobObject — without this hook the deadline/cancel
+            // paths would never stop the tree (§11.3).
+            let platform_kill = prepared.resources.as_ref().map(|res| {
+                let res = std::sync::Arc::clone(res);
+                nsk_supervisor::monitor::PlatformKill(std::sync::Arc::new(move || {
+                    let _ = res.kill_all();
+                }))
+            });
+
             let process = nsk_supervisor::monitor::spawn(
                 process_spec,
-                nsk_provider::traits::supervisor_config(&ctx.policy, ctx.events),
+                nsk_provider::traits::supervisor_config(&ctx.policy, ctx.events, platform_kill),
             )?;
 
             // Attach to the job object (assign + resume); fail closed on

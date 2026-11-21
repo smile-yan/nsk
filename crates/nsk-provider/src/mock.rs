@@ -237,7 +237,7 @@ impl SandboxProvider for MockProvider {
     ) -> Result<RunningSandbox, SandboxError> {
         let process = nsk_supervisor::monitor::spawn(
             prepared.plan.clone().into_process_spec(),
-            crate::traits::supervisor_config(&ctx.policy, ctx.events),
+            crate::traits::supervisor_config(&ctx.policy, ctx.events, None),
         )?;
         #[cfg(target_os = "macos")]
         if let Some(res) = &prepared.resources {

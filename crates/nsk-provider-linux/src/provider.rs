@@ -438,7 +438,7 @@ impl SandboxProvider for LinuxProvider {
 
         let process = nsk_supervisor::monitor::spawn(
             process_spec,
-            nsk_provider::traits::supervisor_config(&ctx.policy, ctx.events),
+            nsk_provider::traits::supervisor_config(&ctx.policy, ctx.events, None),
         )?;
 
         let pid = process.pid();

@@ -369,7 +369,7 @@ impl SandboxProvider for MacOSProvider {
     ) -> Result<RunningSandbox, SandboxError> {
         let process = nsk_supervisor::monitor::spawn(
             prepared.plan.clone().into_process_spec(),
-            nsk_provider::traits::supervisor_config(&ctx.policy, ctx.events),
+            nsk_provider::traits::supervisor_config(&ctx.policy, ctx.events, None),
         )?;
 
         // Arm reactive enforcement (watchdogs self-terminate with the
