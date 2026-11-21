@@ -139,6 +139,22 @@ impl SandboxPathMapper {
         if self.host_prefixes.iter().any(|p| p == host) {
             return Some(host.to_path_buf());
         }
+        // Merged-usr layouts (Ubuntu ≥ 18.04): /bin, /sbin, /lib are
+        // symlinks into /usr, so a host path like /bin/sh never literally
+        // matches the mounted /usr prefix. Retry with symlink-resolved
+        // paths on both sides (§10.5): the host path is canonicalized and
+        // each prefix too, so the match survives symlinked ancestors on
+        // either side (e.g. tmpdirs behind /var → /private/var).
+        let resolved = std::fs::canonicalize(host).ok()?;
+        for prefix in &self.host_prefixes {
+            let Some(canonical) = std::fs::canonicalize(prefix).ok() else {
+                continue;
+            };
+            if let Ok(rel) = resolved.strip_prefix(&canonical) {
+                // The sandbox side is the 1:1 mount of the literal prefix.
+                return Some(prefix.join(rel));
+            }
+        }
         None
     }
 }
@@ -233,5 +249,35 @@ mod tests {
             Some(PathBuf::from("/usr/bin/sh"))
         );
         assert_eq!(mapper.to_sandbox_path(Path::new("/home/user/x")), None);
+    }
+
+    /// Merged-usr hosts expose /bin/sh as a symlink into /usr/bin/sh; the
+    /// literal-prefix mapper must still resolve it to the mounted /usr tree
+    /// (regression for CI on Ubuntu ≥ 18.04 runners, §10.5).
+    #[test]
+    #[cfg(unix)]
+    fn path_mapper_resolves_merged_usr_symlinks() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let real = tmp.path().join("usr").join("bin");
+        std::fs::create_dir_all(&real).expect("create usr/bin");
+        std::fs::write(real.join("sh"), b"#!/bin/sh\n").expect("write sh");
+        std::os::unix::fs::symlink(tmp.path().join("usr").join("bin"), tmp.path().join("bin"))
+            .expect("create merged-usr /bin symlink");
+
+        let mapper = SandboxPathMapper {
+            workspace_host_root: tmp.path().join("ws"),
+            workspace_sandbox_root: "/workspace".into(),
+            host_prefixes: vec![tmp.path().join("usr")],
+        };
+        // /bin/sh is a symlink into the mounted /usr tree → maps to /usr/bin/sh.
+        assert_eq!(
+            mapper.to_sandbox_path(&tmp.path().join("bin").join("sh")),
+            Some(tmp.path().join("usr").join("bin").join("sh"))
+        );
+        // Paths outside every prefix stay unreachable.
+        assert_eq!(
+            mapper.to_sandbox_path(&tmp.path().join("etc").join("x")),
+            None
+        );
     }
 }

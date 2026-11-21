@@ -820,8 +820,18 @@ mod tests {
         caps
     }
 
+    /// Absolute executable that satisfies §6.3 validation on every platform
+    /// ("/bin/echo" is not `is_absolute()` on Windows and fails NSK2000).
+    fn any_absolute_exe() -> &'static str {
+        if cfg!(windows) {
+            "C:\\Windows\\System32\\cmd.exe"
+        } else {
+            "/bin/echo"
+        }
+    }
+
     fn spec(policy: SandboxPolicy) -> SandboxSpec {
-        let mut s = SandboxSpec::new(CommandSpec::new("/bin/echo"));
+        let mut s = SandboxSpec::new(CommandSpec::new(any_absolute_exe()));
         s.workspace = WorkspaceSpec::ephemeral();
         s.policy = policy;
         s

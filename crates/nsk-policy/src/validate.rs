@@ -282,7 +282,14 @@ mod tests {
     use std::path::PathBuf;
 
     fn base_spec() -> SandboxSpec {
-        let mut s = SandboxSpec::new(CommandSpec::new("/bin/echo"));
+        // §6.3: absolute per-platform syntax ("/bin/echo" is not absolute on
+        // Windows and would fail validation with NSK2000).
+        let exe = if cfg!(windows) {
+            "C:\\Windows\\System32\\cmd.exe"
+        } else {
+            "/bin/echo"
+        };
+        let mut s = SandboxSpec::new(CommandSpec::new(exe));
         s.workspace = WorkspaceSpec::ephemeral();
         s
     }

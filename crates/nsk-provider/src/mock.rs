@@ -314,7 +314,14 @@ mod tests {
         // does), but prepare re-validates the spec. The runtime's resolve()
         // is the fail-closed gate; here we assert the resolve step.
         use nsk_core::spec::{CommandSpec, SandboxSpec, WorkspaceSpec};
-        let mut spec = SandboxSpec::new(CommandSpec::new("/bin/echo"));
+        // §6.3: absolute per-platform syntax ("/bin/echo" is not absolute on
+        // Windows and would fail validation with NSK2000).
+        let exe = if cfg!(windows) {
+            "C:\\Windows\\System32\\cmd.exe"
+        } else {
+            "/bin/echo"
+        };
+        let mut spec = SandboxSpec::new(CommandSpec::new(exe));
         spec.workspace = WorkspaceSpec::ephemeral();
         spec.policy = nsk_core::policy::SandboxPolicy::minimal();
 

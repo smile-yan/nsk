@@ -320,7 +320,7 @@ fn apply_rlimit(cmd: &mut tokio::process::Command, rl: RlimitSpec) -> Result<(),
         R::AddressSpace(_) => libc::RLIMIT_AS,
         R::Processes(_) => libc::RLIMIT_NPROC,
     };
-    let value = rl.value().min(libc::RLIM_INFINITY) as libc::rlim_t;
+    let value = rl.value() as libc::rlim_t;
     let lim = libc::rlimit {
         rlim_cur: value,
         rlim_max: value,
